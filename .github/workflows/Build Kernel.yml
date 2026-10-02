@@ -370,8 +370,8 @@ jobs:
         if: inputs.ksu_type == 'KernelSU Next'
         run: |
           cd kernel_workspace/common
-          echo "🛠️ Setting up KernelSU-Next (legacy branch)..."
-          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/legacy/kernel/setup.sh" | bash -s legacy
+          echo "🛠️ Setting up KernelSU-Next (next branch)..."
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s next
           cd KernelSU-Next
           KSU_GIT_VERSION=$(git rev-list --count HEAD)
           export KSUVER=$(expr 10000 + $KSU_GIT_VERSION + 200)
