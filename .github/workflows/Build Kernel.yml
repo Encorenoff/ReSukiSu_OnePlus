@@ -442,12 +442,12 @@ jobs:
         working-directory: kernel_workspace/common
         run: |
           cp ../susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch ./KernelSU-Next/
-          FIX_DIR="../wildkernels_patches/next/susfs_fix_patches/v2.2.0"
+          FIX_DIR="../wildkernels_patches/next/susfs_fix_patches/v2.3.0"
 
           echo "📦 [1/3] Applying 10_enable_susfs_for_ksu (KSUN-specific rejects are expected)..."
           ( cd KernelSU-Next && patch -p1 --forward < 10_enable_susfs_for_ksu.patch || true )
 
-          echo "📦 [2/3] Applying WildKernels KSUN fix patches (v2.2.0)..."
+          echo "📦 [2/3] Applying WildKernels KSUN fix patches (v2.3.0)..."
           for p in \
             fix_Kbuild.patch \
             fix_init.c.patch \
