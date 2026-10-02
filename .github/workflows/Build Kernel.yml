@@ -370,13 +370,14 @@ jobs:
         if: inputs.ksu_type == 'KernelSU Next'
         run: |
           cd kernel_workspace/common
-          echo "🛠️ Setting up KernelSU-Next (next branch)..."
-          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s next
+          echo "🛠️ Setting up KernelSU-Next (latest)..."
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" 2>/dev/null | bash || \
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/main/kernel/setup.sh" | bash
           cd KernelSU-Next
           KSU_GIT_VERSION=$(git rev-list --count HEAD)
           export KSUVER=$(expr 10000 + $KSU_GIT_VERSION + 200)
           echo "KSUVER=$KSUVER" >> $GITHUB_ENV
-          echo "✅ KernelSU-Next $(git describe --tags 2>/dev/null || git rev-parse --short HEAD)  (ver $KSUVER)"
+          echo "✅ KernelSU-Next $(git describe --tags 2>/dev/null || git rev-parse --short HEAD) (ver $KSUVER)"
           
       - name: 🔧 Setup Patches
         run: |
