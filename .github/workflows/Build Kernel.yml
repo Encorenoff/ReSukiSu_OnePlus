@@ -370,8 +370,9 @@ jobs:
         if: inputs.ksu_type == 'KernelSU Next'
         run: |
           cd kernel_workspace/common
-          echo "🛠️ Setting up KernelSU-Next (next branch)..."
-          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s next
+          echo "🛠️ Setting up KernelSU-Next (next-susfs branch)..."
+          # Клонируем ветку с уже встроенным SuSFS
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next-susfs/kernel/setup.sh" | bash -s next-susfs
           cd KernelSU-Next
           KSU_GIT_VERSION=$(git rev-list --count HEAD)
           export KSUVER=$(expr 10000 + $KSU_GIT_VERSION + 200)
@@ -441,31 +442,7 @@ jobs:
         if: inputs.SUSFS && inputs.ksu_type == 'KernelSU Next'
         working-directory: kernel_workspace/common
         run: |
-          cp ../susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch ./KernelSU-Next/
-          FIX_DIR="../wildkernels_patches/next/susfs_fix_patches/v2.3.0"
-
-          echo "📦 [1/3] Applying 10_enable_susfs_for_ksu (KSUN-specific rejects are expected)..."
-          ( cd KernelSU-Next && patch -p1 --forward < 10_enable_susfs_for_ksu.patch || true )
-
-          echo "📦 [2/3] Applying WildKernels KSUN fix patches (v2.3.0)..."
-          for p in \
-            fix_Kbuild.patch \
-            fix_init.c.patch \
-            fix_kernel_umount.c.patch \
-            fix_setuid_hook.c.patch \
-            fix_sucompat.c.patch \
-            fix_supercall.c.patch \
-            ksu_toolkit.patch \
-            overwrite_hook_mode.patch; do
-            if [ -f "$FIX_DIR/$p" ]; then
-              ( cd KernelSU-Next && patch -p1 --forward < "../$FIX_DIR/$p" ) \
-                && echo "  ✅ $p" || echo "  ⚠️ $p (skipped/conflict)"
-            else
-              echo "  ⚠️ $p not found"
-            fi
-          done
-
-          echo "📦 [3/3] Applying 50_add_susfs kernel patch..."
+          echo "📦 Applying SUSFS kernel patch..."
           patch -p1 < 50_add_susfs_in_gki-android15-6.6.patch
 
       - name: ⚙️ Configure Kernel Options
@@ -913,7 +890,7 @@ jobs:
       - name: 📦 Add build name
         run: |
           cd kernel_workspace
-          sudo sed -i "s/-4k/-palaziks-ShiftPorts/g" ./common/arch/arm64/configs/gki_defconfig
+          sudo sed -i "s/-4k/-encoren/g" ./common/arch/arm64/configs/gki_defconfig
           sed -i 's/${scm_version}//' ./common/scripts/setlocalversion
           echo "CONFIG_LOCALVERSION_AUTO=n" >> ./common/arch/arm64/configs/gki_defconfig
 
