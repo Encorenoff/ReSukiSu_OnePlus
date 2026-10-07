@@ -148,6 +148,11 @@ on:
         required: true
         type: boolean
         default: true
+      nomount_enable:
+        description: 'Enable NoMount (kernel VFS path redirection) + build NoMount metamodule zip'
+        required: true
+        type: boolean
+        default: false
 
 jobs:
   build:
@@ -938,6 +943,26 @@ jobs:
           curl -sSL https://github.com/cctv18/Baseband-guard/raw/master/setup.sh | bash
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' security/Kconfig
 
+      - name: 🧩 Integrate NoMount (kernel)
+        if: inputs.nomount_enable
+        working-directory: kernel_workspace/common
+        run: |
+          set -euo pipefail
+          echo "🧩 Integrating NoMount (maxsteeel/nomount, dev)..."
+          # setup.sh clones NoMount into ./NoMount, symlinks fs/nomount -> kernel/src,
+          # adds obj-$(CONFIG_NOMOUNT) to fs/Makefile and sources its Kconfig.
+          curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors \
+            https://raw.githubusercontent.com/maxsteeel/nomount/refs/heads/dev/kernel/setup.sh | bash -s dev
+          [ -L fs/nomount ] && [ -f fs/nomount/nomount.c ] \
+            || { echo "::error::NoMount integration failed: fs/nomount symlink missing"; exit 1; }
+          grep -q 'nomount' fs/Makefile || { echo "::error::fs/Makefile not patched"; exit 1; }
+          grep -q 'fs/nomount/Kconfig' fs/Kconfig || { echo "::error::fs/Kconfig not patched"; exit 1; }
+          NM_SHA=$(git -C NoMount rev-parse HEAD)
+          # the metamodule zip is built from exactly the same commit as the kernel part
+          echo "NOMOUNT_COMMIT=$NM_SHA" >> $GITHUB_ENV
+          echo "CONFIG_NOMOUNT=y" >> arch/arm64/configs/gki_defconfig
+          echo "✅ NoMount integrated @ ${NM_SHA:0:8}"
+
       - name: 📦 Add build name
         run: |
           cd kernel_workspace
@@ -1059,6 +1084,7 @@ jobs:
           echo "IP_SET+IPv6NAT: ${{ github.event.inputs.ip_set_enable }}" >> ./ak3.log
           echo "TTL: ${{ github.event.inputs.ttl_enable }}" >> ./ak3.log
           echo "MemOpt: ${{ github.event.inputs.mem_opt_patches }}" >> ./ak3.log
+          echo "NoMount: ${{ github.event.inputs.nomount_enable }} ${NOMOUNT_COMMIT:-}" >> ./ak3.log
           echo "BORE: ${{ github.event.inputs.bore_enable }}" >> ./ak3.log
           zip -z ../$AK3_NAME < ./ak3.log
 
@@ -1067,6 +1093,53 @@ jobs:
         with:
           name: ${{ steps.create_zip.outputs.ak3name }}
           path: ${{ github.workspace }}/kernel_workspace/AnyKernel*.zip
+
+      - name: 🔧 Set up Zig (NoMount metamodule)
+        if: inputs.nomount_enable
+        uses: jetsung/setup-zig@v0.0.4
+        with:
+          version: master
+
+      - name: 🧩 Build NoMount metamodule
+        if: inputs.nomount_enable
+        id: nomount_module
+        run: |
+          set -euo pipefail
+          [[ "${NOMOUNT_COMMIT:-}" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::NOMOUNT_COMMIT not set"; exit 1; }
+          SRC="$RUNNER_TEMP/nomount-src"
+          OUT="$RUNNER_TEMP/nomount-metamodule"
+          git clone --no-checkout https://github.com/maxsteeel/nomount.git "$SRC"
+          git -C "$SRC" fetch --depth=1 origin "$NOMOUNT_COMMIT"
+          git -C "$SRC" checkout --detach --quiet "$NOMOUNT_COMMIT"
+
+          mkdir -p "$SRC/bin"
+          ( cd "$SRC/userspace/src"
+            zig cc -target aarch64-linux -Oz -mcmodel=tiny -static -nostdlib \
+              -ffreestanding -fno-unwind-tables -fno-ident -Wno-invalid-noreturn \
+              -Wl,--entry=_start nm.c -o ../../bin/nm-arm64
+            zig cc -target arm-linux -Oz -static -nostdlib -ffreestanding \
+              -fno-unwind-tables -fno-ident -Wno-invalid-noreturn \
+              -ffunction-sections -fdata-sections -Wl,--gc-sections \
+              -Wl,--entry=_start nm.c -o ../../bin/nm-arm )
+
+          cp -a "$SRC/module" "$OUT"
+          mkdir -p "$OUT/bin"
+          install -m 0755 "$SRC/bin/nm-arm64" "$OUT/bin/nm-arm64"
+          install -m 0755 "$SRC/bin/nm-arm"   "$OUT/bin/nm-arm"
+          sed -i "s/^versionCode=.*/versionCode=1/" "$OUT/module.prop"
+          printf '%s\n' "$NOMOUNT_COMMIT" > "$OUT/NOMOUNT_SOURCE_COMMIT"
+          test -f "$OUT/module.prop" && grep -q '^metamodule=true' "$OUT/module.prop"
+          echo "module_dir=$OUT" >> "$GITHUB_OUTPUT"
+          echo "✅ NoMount metamodule built from ${NOMOUNT_COMMIT:0:8}"
+
+      - name: 📤 Upload NoMount metamodule
+        if: inputs.nomount_enable
+        uses: actions/upload-artifact@v4
+        with:
+          # the folder contents are uploaded, so the downloaded artifact zip
+          # is itself the flashable module (module.prop at the zip root)
+          name: NoMount-Metamodule
+          path: ${{ steps.nomount_module.outputs.module_dir }}/
 
       - name: 📝 Make ZRAM module
         run: |
@@ -1134,6 +1207,7 @@ jobs:
           export TG_IP_SET="${{ github.event.inputs.ip_set_enable }}"
           export TG_TTL="${{ github.event.inputs.ttl_enable }}"
           export TG_MEM_OPT="${{ github.event.inputs.mem_opt_patches }}"
+          export TG_NOMOUNT="${{ github.event.inputs.nomount_enable }}"
 
           TELEGRAPH_URL=$(python3 << 'PYEOF'
           import json, urllib.request, urllib.parse, os
@@ -1183,6 +1257,7 @@ jobs:
                   feat(e("TG_IP_SET"),      "IP_SET + IPv6 NAT"),
                   feat(e("TG_TTL"),         "TTL/HL Target (hide tethering)"),
                   feat(e("TG_MEM_OPT"),     "Memory & Scheduler Optimizations"),
+                  feat(e("TG_NOMOUNT"),     "NoMount"),
               ]},
               {"tag": "hr"},
               {"tag": "h4", "children": ["🎯 ROM Compatibility"]},
@@ -1326,6 +1401,7 @@ jobs:
           - **IP_SET + IPv6 NAT:** ${{ github.event.inputs.ip_set_enable }}
           - **TTL Target:** ${{ github.event.inputs.ttl_enable }}
           - **Memory & Scheduler Optimizations:** ${{ github.event.inputs.mem_opt_patches }}
+          - **NoMount:** ${{ github.event.inputs.nomount_enable }}
           - **Multi-Manager:** true
           - **LZ4:** ${{ github.event.inputs.lz4_enable }}
           - **LZ4KD:** ${{ github.event.inputs.lz4kd_enable }}
