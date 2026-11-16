@@ -412,7 +412,7 @@ jobs:
           if [ "${{ github.event.inputs.SUSFS }}" == "true" ]; then
             git clone --depth=1 -b gki-android15-6.6 https://gitlab.com/simonpunk/susfs4ksu.git &
           fi
-          git clone --depth=1 https://github.com/mrcxlinux/kernel_patches.git &
+          git clone --depth=1 https://github.com/mrcxlinux/kernel_patches.git &  # TODO: закрепите конкретный коммит, чтобы апстрим не ломал сборку
           git clone --depth=1 https://github.com/ShirkNeko/SukiSU_patch.git &
           git clone --depth=1 https://github.com/palazik/kernel_patches.git wildkernels_patches &
           wait
@@ -590,8 +590,9 @@ jobs:
           cp ../kernel_patches/zram/lz4armv8.S lib/lz4/lz4armv8/lz4armv8.S
           cp ../kernel_patches/zram/002-zstd.patch ./
           echo "Validating LZ4 patch..."
-          git apply --check -p1 < 001-lz4.patch
-          git apply -p1 < 001-lz4.patch
+          # В патче битая binary-секция для lz4armv8.S (файл уже скопирован выше) - исключаем её
+          git apply --check -p1 --exclude='lib/lz4/lz4armv8/lz4armv8.S' < 001-lz4.patch
+          git apply -p1 --exclude='lib/lz4/lz4armv8/lz4armv8.S' < 001-lz4.patch
 
           echo "Validating ZSTD patch..."
           patch --dry-run -p1 < 002-zstd.patch
