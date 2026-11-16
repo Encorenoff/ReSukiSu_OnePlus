@@ -590,9 +590,14 @@ jobs:
           cp ../kernel_patches/zram/lz4armv8.S lib/lz4/lz4armv8/lz4armv8.S
           cp ../kernel_patches/zram/002-zstd.patch ./
           echo "Validating LZ4 patch..."
-          # В патче битая binary-секция для lz4armv8.S (файл уже скопирован выше) - исключаем её
-          git apply --check -p1 --exclude='lib/lz4/lz4armv8/lz4armv8.S' < 001-lz4.patch
-          git apply -p1 --exclude='lib/lz4/lz4armv8/lz4armv8.S' < 001-lz4.patch
+          # В патче битая binary-секция lz4armv8.S (git падает ещё на разборе, --exclude не помогает).
+          # Обрезаем патч до этой секции: сам .S уже скопирован выше.
+          sed -i '/^diff --git a\/fs\/f2fs\/lz4armv8\/lz4armv8\.S /,$d' 001-lz4.patch
+          # Удаление lz4hc_compress.c не совпадает с деревом 6.6.143 - исключаем и удаляем файл вручную
+          # (его заменяет новый lz4hc.c из патча)
+          git apply --check -p1 --exclude='lib/lz4/lz4hc_compress.c' < 001-lz4.patch
+          git apply -p1 --exclude='lib/lz4/lz4hc_compress.c' < 001-lz4.patch
+          rm -f lib/lz4/lz4hc_compress.c
 
           echo "Validating ZSTD patch..."
           patch --dry-run -p1 < 002-zstd.patch
