@@ -1033,6 +1033,16 @@ jobs:
             KCFLAGS="-O2 -pipe -Wno-error -Wno-implicit-function-declaration -Wno-implicit-int -Wno-default-const-init-var-unsafe -Wno-format -Wno-unknown-warning-option" \
             gki_defconfig 2>&1 | tee -a /tmp/kbuild.log
 
+          # KernelSU-Next (preinit) собирается против $(objtree)/usr/include.
+          # Без установленных UAPI-заголовков Kbuild отключает preinit (-DKSU_NO_PREINIT),
+          # а exec.c всё равно вызывает ksu_setup_preinit_file -> undefined symbol при линковке.
+          make -j$(nproc --all) LLVM=1 LLVM_IAS=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+            CC="ccache clang" LD="$(pwd)/ld-wrapper" HOSTLD="$(pwd)/ld-wrapper" \
+            O=$GITHUB_WORKSPACE/kout \
+            headers 2>&1 | tee -a /tmp/kbuild.log
+          test -f "$GITHUB_WORKSPACE/kout/usr/include/linux/unistd.h" \
+            || { echo "::error::UAPI headers not installed in kout/usr/include"; exit 1; }
+
           make -j$(nproc --all) LLVM=1 LLVM_IAS=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
             CC="ccache clang" LD="$(pwd)/ld-wrapper" HOSTLD="$(pwd)/ld-wrapper" \
             O=$GITHUB_WORKSPACE/kout \
