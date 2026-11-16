@@ -156,7 +156,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       ksuver: ${{ steps.ksu_version.outputs.ksuver }}
       ak3name: ${{ steps.create_zip.outputs.ak3name }}
@@ -199,8 +199,11 @@ jobs:
           mkdir -p kernel_workspace/zyc-clang kernel_workspace/build-tools
           cd kernel_workspace
 
+          # Install dependencies before starting parallel downloads.
+          # Ubuntu 24.04 provides libxml2.so.2 required by this Clang/LLD 19 build.
+          sudo apt-get update
           sudo apt-get install -y --no-install-recommends -o Dpkg::Use-Pty=0 \
-            libelf-dev dos2unix pahole cmake &
+            libxml2 libelf-dev dos2unix pahole cmake
 
           echo "Cloning source repository..."
           curl -L https://github.com/palazik/android_kernel_common_oneplus_sm8750/archive/refs/heads/${{ env.KERNEL_FULL_VERSION }}_oneplus13_coloros16.zip \
@@ -230,6 +233,14 @@ jobs:
           fi &
 
           wait
+
+          echo "Checking Clang/LLD runtime dependencies..."
+          if ldd zyc-clang/bin/ld.lld | grep -q "not found"; then
+            ldd zyc-clang/bin/ld.lld
+            echo "::error::Clang LLD has unresolved shared-library dependencies"
+            exit 1
+          fi
+          zyc-clang/bin/ld.lld --version
 
           echo "Removing ABI protection & dirty suffix..."
           rm common/android/abi_gki_protected_exports_* || true
@@ -578,8 +589,13 @@ jobs:
           cp ../kernel_patches/zram/lz4armv8.S lib/lz4/lz4armv8.S
           cp ../kernel_patches/zram/lz4armv8.S lib/lz4/lz4armv8/lz4armv8.S
           cp ../kernel_patches/zram/002-zstd.patch ./
-          git apply -p1 < 001-lz4.patch || echo "LZ4 Patch failed or already applied"
-          patch -p1 < 002-zstd.patch || echo "ZSTD Patch failed or already applied"
+          echo "Validating LZ4 patch..."
+          git apply --check -p1 < 001-lz4.patch
+          git apply -p1 < 001-lz4.patch
+
+          echo "Validating ZSTD patch..."
+          patch --dry-run -p1 < 002-zstd.patch
+          patch -p1 < 002-zstd.patch
 
       - name: Apply LZ4KD Patch
         if: inputs.lz4kd_enable
@@ -1357,7 +1373,7 @@ jobs:
 
   release:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
       packages: write
