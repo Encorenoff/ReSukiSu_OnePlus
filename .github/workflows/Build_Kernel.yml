@@ -600,6 +600,8 @@ jobs:
           rm -f lib/lz4/lz4hc_compress.c
 
           echo "Validating ZSTD patch..."
+          # В portability_macros.h hunk #3 (только x86/Apple/CET) не ложится на дерево 6.6.143 - для arm64 не нужен, вырезаем файл из патча
+          awk '/^diff --git /{skip=($0 ~ /lib\/zstd\/common\/portability_macros\.h/)} !skip' 002-zstd.patch > 002-zstd.fixed && mv 002-zstd.fixed 002-zstd.patch
           patch --dry-run -p1 < 002-zstd.patch
           patch -p1 < 002-zstd.patch
 
